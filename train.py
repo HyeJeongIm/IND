@@ -18,9 +18,15 @@ class TrainerDeepSVDD:
 
         self.net = network(self.args.latent_dim).to(self.device)
         self.result_dir = os.path.join(self.args.output_path, self.args.dataset_name)
+        self.fine_tune_results_dir = os.path.join(self.args.output_path, "IND_buffer", f"{self.args.testdataset_version}_fine_tune")
         self.pretrained_weights_path = f'{self.result_dir}/pretrained_parameters.pth'
         self.trained_weights_path = f'{self.result_dir}/trained_parameters.pth'
+        self.fine_tune_weights_path = f'{self.result_dir}/fine_tuned_parameters.pth'
+        self.buffer_fine_tune_weights_path = f'{self.fine_tune_results_dir}/buffer_fine_tuned_parameters.pth'
+
         self.ensure_directory_exists(self.result_dir)
+        self.ensure_directory_exists(self.fine_tune_results_dir)
+
 
     def ensure_directory_exists(self, path):
         if not os.path.exists(path):
@@ -116,6 +122,56 @@ class TrainerDeepSVDD:
         self.net = self.net
         self.c = c
         torch.save({'center': self.c.cpu().numpy(), 'net_dict': self.net.state_dict()}, self.trained_weights_path)
+
+    def fine_tune(self):
+        """Fine-tuning the Deep SVDD model"""
+        optimizer = optim.Adam(self.net.parameters(), lr=self.args.lr, weight_decay=self.args.weight_decay)
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=self.args.lr_milestones, gamma=0.1)
+
+        self.net.train()
+        for epoch in range(self.args.num_epochs):
+            total_loss = 0
+            for x, _ in Bar(self.test_loader):
+                x = x.float().to(self.device)
+
+                optimizer.zero_grad()
+                z = self.net(x)
+                loss = torch.mean(torch.sum((z - self.c) ** 2, dim=1))
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+            scheduler.step()
+            print(f'Fine-tuning Deep SVDD... Epoch: {epoch + 1}, Loss: {total_loss / len(self.test_loader):.3f}')
+        
+        # Save fine-tuned weights
+        torch.save({'center': self.c.cpu().numpy(), 'net_dict': self.net.state_dict()}, self.fine_tune_weights_path)
+
+    def buffer_fine_tune(self):
+        """Fine-tuning the Deep SVDD model"""
+        optimizer = optim.Adam(self.net.parameters(), lr=self.args.lr, weight_decay=self.args.weight_decay)
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer, milestones=self.args.lr_milestones, gamma=0.1)
+
+        self.net.train()
+        for epoch in range(self.args.num_epochs):
+            total_loss = 0
+            for x, _ in Bar(self.test_loader):
+                x = x.float().to(self.device)
+
+                optimizer.zero_grad()
+                z = self.net(x)
+                loss = torch.mean(torch.sum((z - self.c) ** 2, dim=1))
+                loss.backward()
+                optimizer.step()
+
+                total_loss += loss.item()
+            scheduler.step()
+            print(f'Fine-tuning Deep SVDD... Epoch: {epoch + 1}, Loss: {total_loss / len(self.test_loader):.3f}')
+        
+        # Save fine-tuned weights
+        torch.save({'center': self.c.cpu().numpy(), 'net_dict': self.net.state_dict()}, self.buffer_fine_tune_weights_path)
+
+                
 
                 
 

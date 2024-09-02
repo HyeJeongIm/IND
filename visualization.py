@@ -195,3 +195,103 @@ def visualize_misclassified(args, indices, labels, predictions, scores, data, re
     plt.savefig(f'{result_dir}/05. misclassified_visualization.png')
     plt.close(fig)
     print(f'Misclassified examples visualization saved at {result_dir}/misclassified_visualization.png')
+
+from sklearn.manifold import TSNE
+import matplotlib.pyplot as plt
+import numpy as np
+
+def visualize_feature_embeddings(net, dataloader, save_dir, device):
+    net.eval()
+    features = []
+    labels = []
+    with torch.no_grad():
+        for x, label in dataloader:
+            x = x.float().to(device)
+            z = net(x).cpu().numpy()
+            features.append(z)
+            labels.append(label.numpy())
+    
+    features = np.concatenate(features, axis=0)
+    labels = np.concatenate(labels, axis=0)
+
+    # Apply t-SNE or UMAP
+    tsne = TSNE(n_components=2, random_state=42)
+    features_2d = tsne.fit_transform(features)
+
+    plt.figure(figsize=(8, 8))
+    plt.scatter(features_2d[labels==0, 0], features_2d[labels==0, 1], label='Normal', alpha=0.5)
+    plt.scatter(features_2d[labels==1, 0], features_2d[labels==1, 1], label='Anomalous', alpha=0.5, color='r')
+    plt.legend()
+    plt.title('t-SNE of Latent Features')
+    plt.savefig(os.path.join(save_dir, '06. tsne_feature_embeddings.png'))
+    plt.close()
+
+from sklearn.metrics import roc_curve, auc
+
+def plot_roc_curve(labels, scores, save_dir, title='ROC Curve'):
+    fpr, tpr, _ = roc_curve(labels, scores)
+    roc_auc = auc(fpr, tpr)
+    
+    plt.figure(figsize=(8, 8))
+    plt.plot(fpr, tpr, color='darkorange', lw=2, label=f'ROC curve (area = {roc_auc:.2f})')
+    plt.plot([0, 1], [0, 1], color='navy', lw=2, linestyle='--')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.0])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title(title)
+    plt.legend(loc='lower right')
+    plt.savefig(os.path.join(save_dir, '07. roc_curve.png'))
+    plt.close()
+
+def plot_feature_distribution(net, dataloader, save_dir, device):
+    net.eval()
+    features = []
+    labels = []
+    with torch.no_grad():
+        for x, label in dataloader:
+            x = x.float().to(device)
+            z = net(x).cpu().numpy()
+            features.append(z)
+            labels.append(label.numpy())
+    
+    features = np.concatenate(features, axis=0)
+    labels = np.concatenate(labels, axis=0)
+
+    plt.figure(figsize=(10, 6))
+    plt.hist(features[labels==0].flatten(), bins=50, alpha=0.5, label='Normal', color='blue')
+    plt.hist(features[labels==1].flatten(), bins=50, alpha=0.5, label='Anomalous', color='red')
+    plt.xlabel('Feature Value')
+    plt.ylabel('Frequency')
+    plt.legend()
+    plt.title('Feature Distribution')
+    plt.savefig(os.path.join(save_dir, '08. feature_distribution.png'))
+    plt.close()
+
+import matplotlib.pyplot as plt
+from PIL import Image
+
+def visualize_and_save_novel_images(novel_buffer, results_dir):
+    dir = os.path.join(results_dir, "Novel_img")
+
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    
+    for i, (img_path, label) in enumerate(novel_buffer):
+        image = Image.open(img_path).convert('RGB')
+        plt.figure()
+        plt.imshow(image)
+
+        plt.title(f"Novel Image {i+1} - Label: {label.item()}")
+        plt.axis('off')
+
+        # Save the image
+        image_path = os.path.join(dir, f"novel_image_{i+1}_label_{label.item()}.png")
+        plt.savefig(image_path)
+        plt.close()  # Close the figure to free memory
+
+        print(f"Saved {image_path}")
+
+
+
+
