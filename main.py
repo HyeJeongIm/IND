@@ -77,19 +77,19 @@ if __name__ == '__main__':
     indices, labels, scores = eval(deep_SVDD.net, deep_SVDD.c, data[1], device)
 
     """ Visualization """
-    # Seperate normal and abnormal score
+    # Seperate normal and novel score
     normal_scores = [score for label, score in zip(labels, scores) if label == 0] # normal
-    abnormal_scores = [score for label, score in zip(labels, scores) if label == 1] # abnormal
+    novel_scores = [score for label, score in zip(labels, scores) if label == 1] # novel
 
     # Score Distribution
     visualization.distribution_normal(normal_scores, result_dir)
-    visualization.distribution_abnormal(abnormal_scores, result_dir)
-    visualization.distribution_comparison(normal_scores, abnormal_scores, result_dir)
+    visualization.distribution_novel(novel_scores, result_dir)
+    visualization.distribution_comparison(normal_scores, novel_scores, result_dir)
 
     # AUROC, Confusion Matrix
     visualization.auroc_confusion_matrix1(args, labels, scores, result_dir)
 
-    # Top Normal(5) & Abnormal(5) 
+    # Top Normal(5) & Novel(5) 
     visualization.top5_down5_visualization(args, indices, labels, scores, data, result_dir)
     
     # Treshold에 따른 Misclassified Images (FP & FN)
@@ -108,7 +108,7 @@ if __name__ == '__main__':
     visualization.plot_roc_curve(labels, scores, result_dir)
     visualization.plot_feature_distribution(deep_SVDD.net, data[1], result_dir, device)
 
-    # mim, max, most common radius에 따른 circle
+    # min, max, most common radius에 따른 circle
     visualization.visualize_latent_space_train(deep_SVDD.net, deep_SVDD.c, data[0], device, result_dir)
     visualization.visualize_latent_space_test(deep_SVDD.net, deep_SVDD.c, data[1], device, result_dir)
 
