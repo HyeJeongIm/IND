@@ -1,17 +1,34 @@
 import numpy as np
 import argparse 
 import torch
-
+import ipdb
 from train import TrainerDeepSVDD
 # from preprocess import get_mnist
 from dataloader import get_dataloaders
 import os
 import visualization
 from test import eval
+import random
 
+# seed 고정 
+def set_seed(seed):
+    """Set the random seed for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)  # if using multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+"""
+    초기 OOD model 생성
+    --dataset_name에 해당하는 Deep SVDD model 생성 
+"""
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Deep SVDD Training on MVTecAD Datasets")
-    
+    parser.add_argument('--seed', type=int, default=42, help='Random seed for reproducibility')  # 시드 추가
     parser.add_argument("--num_epochs", type=int, default=100, help="Number of epochs")
     parser.add_argument("--num_epochs_ae", type=int, default=100, help="Number of epochs for the pretraining")
     parser.add_argument("--patience", type=int, default=50, help="Patience for Early Stopping")
@@ -29,8 +46,11 @@ if __name__ == '__main__':
     # Save path
     parser.add_argument('--output_path', type=str, default='./results/', help='Path to save the output models and results')
     parser.add_argument('--normal_class', type=int, default=0, help='Class to be treated as normal. The rest will be considered as anomalous.') 
-    
+    parser.add_argument('--testdataset_version', type=str, default='v4', help='Version of the IND test dataset')
+
     args = parser.parse_args()
+    set_seed(args.seed)
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     # Check save path
@@ -41,7 +61,6 @@ if __name__ == '__main__':
  
     """ Load data """
     data = get_dataloaders(args)
-    # data = get_mnist(args)
 
     """ Model """
     deep_SVDD = TrainerDeepSVDD(args, data, device)
@@ -68,7 +87,7 @@ if __name__ == '__main__':
     visualization.distribution_comparison(normal_scores, abnormal_scores, result_dir)
 
     # AUROC, Confusion Matrix
-    visualization.auroc_confusion_matrix(args, labels, scores, result_dir)
+    visualization.auroc_confusion_matrix1(args, labels, scores, result_dir)
 
     # Top Normal(5) & Abnormal(5) 
     visualization.top5_down5_visualization(args, indices, labels, scores, data, result_dir)
@@ -83,3 +102,17 @@ if __name__ == '__main__':
 
     predictions = [1 if score >= threshold else 0 for score in scores]
     visualization.visualize_misclassified(args, indices, labels, predictions, scores, data, result_dir)
+
+    # Usage in IND.py
+    visualization.visualize_feature_embeddings(deep_SVDD.net, data[1], result_dir, device)
+    visualization.plot_roc_curve(labels, scores, result_dir)
+    visualization.plot_feature_distribution(deep_SVDD.net, data[1], result_dir, device)
+
+    # mim, max, most common radius에 따른 circle
+    visualization.visualize_latent_space_train(deep_SVDD.net, deep_SVDD.c, data[0], device, result_dir)
+    visualization.visualize_latent_space_test(deep_SVDD.net, deep_SVDD.c, data[1], device, result_dir)
+
+    
+
+
+

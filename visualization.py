@@ -1,23 +1,27 @@
-from sklearn.metrics import roc_auc_score, confusion_matrix
-import seaborn as sns
-import matplotlib.pyplot as plt
-import numpy as np
-from collections import Counter
 import os
 import torch
+import numpy as np
+import seaborn as sns
+from collections import Counter
+import matplotlib.pyplot as plt
+from scipy.stats import gaussian_kde
+from matplotlib.patches import Circle
+from sklearn.neighbors import KernelDensity
+from sklearn.metrics import roc_auc_score, confusion_matrix
 
-def auroc_confusion_matrix(args, labels, scores, result_dir):
+def auroc_confusion_matrix1(args, labels, scores, result_dir):
 
     roc_auc = roc_auc_score(labels, scores) * 100
 
     # confusion matrix
     normal_scores = [score for label, score in zip(labels, scores) if label == 0]
     normal_max_dist = max(normal_scores)
-    abnormal_scores = [score for label, score in zip(labels, scores) if label == 1]
-    abnormal_max_dist = min(abnormal_scores)
+    novel_scores = [score for label, score in zip(labels, scores) if label == 1]
+    novel_max_dist = min(novel_scores)
     
     threshold = sum(normal_scores) / len(normal_scores)
     predictions = [1 if score >= threshold else 0 for score in scores]
+    
     cf_matrix = confusion_matrix(labels, predictions)
     
     group_names = ["TN", "FP", "FN", "TP"]
@@ -26,7 +30,7 @@ def auroc_confusion_matrix(args, labels, scores, result_dir):
     cf_labels = ["{0}\n{1}\n({2})".format(v1, v2, v3) for v1, v2, v3 in zip(group_names, group_counts, group_percentages)]
     cf_labels = np.asarray(cf_labels).reshape(2,2)
     
-    sns.heatmap(cf_matrix, annot=cf_labels, fmt='', cmap='Blues', xticklabels=['Predicted Normal', 'Predicted Abnormal'], yticklabels=['Actual Normal', 'Actual Abnormal'])
+    sns.heatmap(cf_matrix, annot=cf_labels, fmt='', cmap='Blues', xticklabels=['Predicted Normal', 'Predicted Novel'], yticklabels=['Actual Normal', 'Actual Novel'])
     plt.xlabel('Predicted Label')
     plt.ylabel('True Label')
     plt.title(f'Confusion Matrix for Class {args.normal_class}')
@@ -34,7 +38,7 @@ def auroc_confusion_matrix(args, labels, scores, result_dir):
     plt.close()
 
     normal_scores_np = np.array(normal_scores)
-    abnormal_scores_np = np.array(abnormal_scores)
+    novel_scores_np = np.array(novel_scores)
 
     result_file_path = os.path.join(result_dir, '01. auc_scores.txt')    
     with open(result_file_path, 'w') as file:
@@ -42,11 +46,47 @@ def auroc_confusion_matrix(args, labels, scores, result_dir):
         file.write(f'Label counts: {Counter(labels)}\n')
         file.write(f'Prediction counts: {Counter(predictions)}\n')
         file.write(f'Normal Scores - Min: {np.min(normal_scores_np):.2f}, Max: {np.max(normal_scores_np):.2f}, Mean: {np.mean(normal_scores_np):.2f}\n')
-        file.write(f'Abnormal Scores - Min: {np.min(abnormal_scores_np):.2f}, Max: {np.max(abnormal_scores_np):.2f}, Mean: {np.mean(abnormal_scores_np):.2f}\n')
+        file.write(f'Novel Scores - Min: {np.min(novel_scores_np):.2f}, Max: {np.max(novel_scores_np):.2f}, Mean: {np.mean(novel_scores_np):.2f}\n')
 
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
+def auroc_confusion_matrix(args, labels, scores, thresholds, result_dir):
+
+    roc_auc = roc_auc_score(labels, scores) * 100
+
+    # confusion matrix
+    normal_scores = [score for label, score in zip(labels, scores) if label == 0]
+    normal_max_dist = max(normal_scores)
+    novel_scores = [score for label, score in zip(labels, scores) if label == 1]
+    novel_max_dist = min(novel_scores)
+    
+    threshold = sum(normal_scores) / len(normal_scores)
+    predictions = [1 if score >= threshold else 0 for score in scores]
+    
+    cf_matrix = confusion_matrix(labels, predictions)
+    
+    group_names = ["TN", "FP", "FN", "TP"]
+    group_counts = ["{0:0.0f}".format(value) for value in cf_matrix.flatten()]
+    group_percentages = ["{0:.2%}".format(value) for value in cf_matrix.flatten() / np.sum(cf_matrix)]
+    cf_labels = ["{0}\n{1}\n({2})".format(v1, v2, v3) for v1, v2, v3 in zip(group_names, group_counts, group_percentages)]
+    cf_labels = np.asarray(cf_labels).reshape(2,2)
+    
+    sns.heatmap(cf_matrix, annot=cf_labels, fmt='', cmap='Blues', xticklabels=['Predicted Normal', 'Predicted Novel'], yticklabels=['Actual Normal', 'Actual Novel'])
+    plt.xlabel('Predicted Label')
+    plt.ylabel('True Label')
+    plt.title(f'Confusion Matrix for Class {args.normal_class}')
+    plt.savefig(f'{result_dir}/02. Confusion_Matrix.png')
+    plt.close()
+
+    normal_scores_np = np.array(normal_scores)
+    novel_scores_np = np.array(novel_scores)
+
+    result_file_path = os.path.join(result_dir, '01. auc_scores.txt')    
+    with open(result_file_path, 'w') as file:
+        file.write(f' AUROC: {roc_auc:.2f}%\n')
+        file.write(f'Label counts: {Counter(labels)}\n')
+        file.write(f'Prediction counts: {Counter(predictions)}\n')
+        file.write(f'Normal Scores - Min: {np.min(normal_scores_np):.2f}, Max: {np.max(normal_scores_np):.2f}, Mean: {np.mean(normal_scores_np):.2f}\n')
+        file.write(f'Novel Scores - Min: {np.min(novel_scores_np):.2f}, Max: {np.max(novel_scores_np):.2f}, Mean: {np.mean(novel_scores_np):.2f}\n')
+        file.write(f'Threshold: {thresholds}\n')
 
 def distribution_normal(normal_scores, result_dir):
     """
@@ -72,46 +112,46 @@ def distribution_normal(normal_scores, result_dir):
     plt.savefig(f'{result_dir}/03_01. normal_score_distribution.png')
     plt.close()
 
-def distribution_abnormal(abnormal_scores, result_dir):
+def distribution_novel(novel_scores, result_dir):
     """
-    Abnormal 점수 분포 시각화 및 저장
+    Novel 점수 분포 시각화 및 저장
 
     Args:
-        abnormal_scores (list or np.array): Abnormal 점수 목록
+        novel_scores (list or np.array): Novel 점수 목록
         result_dir (str): 결과를 저장할 디렉토리 경로
     """
     plt.figure(figsize=(12, 8))
     
     # KDE Plot
-    sns.kdeplot(abnormal_scores, fill=True, color='red', label='Abnormal')
+    sns.kdeplot(novel_scores, fill=True, color='red', label='Novel')
     
     # 히스토그램
-    plt.hist(abnormal_scores, bins=30, alpha=0.5, color='red', edgecolor='black', density=True)
+    plt.hist(novel_scores, bins=30, alpha=0.5, color='red', edgecolor='black', density=True)
     
-    plt.title('Distribution of Abnormal Scores')
+    plt.title('Distribution of Novel Scores')
     plt.xlabel('Score')
     plt.ylabel('Density')
     plt.legend()
     plt.grid(True)
-    plt.savefig(f'{result_dir}/03_02.abnormal_score_distribution.png')
+    plt.savefig(f'{result_dir}/03_02.novel_score_distribution.png')
     plt.close()
 
-def distribution_comparison(normal_scores, abnormal_scores, result_dir):
+def distribution_comparison(normal_scores, novel_scores, result_dir):
     """
-    Normal 및 Abnormal 점수 분포 비교 시각화 및 저장
+    Normal 및 Novel 점수 분포 비교 시각화 및 저장
 
     Args:
         normal_scores (list or np.array): Normal 점수 목록
-        abnormal_scores (list or np.array): Abnormal 점수 목록
+        novel_scores (list or np.array): Novel 점수 목록
         result_dir (str): 결과를 저장할 디렉토리 경로
     """
     plt.figure(figsize=(12, 8))
     
     # KDE Plot
     sns.kdeplot(normal_scores, fill=True, color='blue', label='Normal')
-    sns.kdeplot(abnormal_scores, fill=True, color='red', label='Abnormal')
+    sns.kdeplot(novel_scores, fill=True, color='red', label='Novel')
     
-    plt.title('Comparison of Normal and Abnormal Scores')
+    plt.title('Comparison of Normal and Novel Scores')
     plt.xlabel('Score')
     plt.ylabel('Density')
     plt.legend()
@@ -119,15 +159,15 @@ def distribution_comparison(normal_scores, abnormal_scores, result_dir):
     plt.savefig(f'{result_dir}/03_03. score_distribution_comparison.png')
     plt.close()
 
+# 가장 이상적인 normal, novel class 5개 시각화 
 def top5_down5_visualization(args, indices, labels, scores, data, result_dir):
-    # 가장 이상적인 normal, abnormal class 5개 시각화 
     normal_indices_scores = [(idx, score) for idx, score, label in zip(indices, scores, labels) if label == 0]
-    abnormal_indices_scores = [(idx, score) for idx, score, label in zip(indices, scores, labels) if label == 1]
+    novel_indices_scores = [(idx, score) for idx, score, label in zip(indices, scores, labels) if label == 1]
 
     normal_indices_scores.sort(key=lambda x: x[1])  
-    abnormal_indices_scores.sort(key=lambda x: x[1], reverse=True)  
+    novel_indices_scores.sort(key=lambda x: x[1], reverse=True)  
     top_normal_images_scores = normal_indices_scores[:5]
-    top_abnormal_images_scores = abnormal_indices_scores[:5]
+    top_novel_images_scores = novel_indices_scores[:5]
 
     fig, axs = plt.subplots(2, 5, figsize=(15, 6))
     for i, (idx, score) in enumerate(top_normal_images_scores):
@@ -137,11 +177,11 @@ def top5_down5_visualization(args, indices, labels, scores, data, result_dir):
         axs[0, i].set_title(f'Normal\nScore: {score:.2f}')
         axs[0, i].axis('off')
 
-    for i, (idx, score) in enumerate(top_abnormal_images_scores):
+    for i, (idx, score) in enumerate(top_novel_images_scores):
         img = data[1].dataset[idx][0]
         img = img.permute(1, 2, 0).cpu().numpy()  # Adjust for matplotlib
         axs[1, i].imshow(img)
-        axs[1, i].set_title(f'Abnormal\nScore: {score:.2f}')
+        axs[1, i].set_title(f'Novel\nScore: {score:.2f}')
         axs[1, i].axis('off')
 
     plt.tight_layout()
@@ -292,6 +332,156 @@ def visualize_and_save_novel_images(novel_buffer, results_dir):
 
         print(f"Saved {image_path}")
 
+def visualize_and_save_known_images(known_buffer, results_dir):
+    dir = os.path.join(results_dir, "Known_img")
+
+    if not os.path.exists(dir):
+        os.makedirs(dir)
+    
+    for i, (img_path, label) in enumerate(known_buffer):
+        image = Image.open(img_path).convert('RGB')
+        plt.figure()
+        plt.imshow(image)
+
+        plt.title(f"Kovel Image {i+1} - Label: {label.item()}")
+        plt.axis('off')
+
+        # Save the image
+        image_path = os.path.join(dir, f"known_image_{i+1}_label_{label.item()}.png")
+        plt.savefig(image_path)
+        plt.close()  # Close the figure to free memory
+
+        print(f"Saved {image_path}")
 
 
+def visualize_latent_space_train(net, center, train_loader, device, save_dir):
+    net.eval()
+    radii = []
+    with torch.no_grad():
+        for x, _ in train_loader:
+            x = x.float().to(device)
+            z = net(x)  # train dataset을 latent space로 변환
+            distances = torch.sum((z - center) ** 2, dim=1)  # 중심과의 거리 계산 (반지름 값)
+            radii.extend(distances.cpu().numpy())  # 반지름 값 저장
 
+    radii = np.array(radii)
+
+    # 가장 작은 반지름과 가장 큰 반지름 계산
+    min_radius = np.min(radii)
+    max_radius = np.max(radii)
+
+    # KDE를 사용하여 반지름의 밀도 추정
+    kde = KernelDensity(kernel='gaussian', bandwidth=0.1).fit(radii[:, None])
+    log_density = kde.score_samples(radii[:, None])
+    density = np.exp(log_density)
+    
+    # 가장 밀도가 높은 반지름 찾기
+    most_common_radius = radii[np.argmax(density)]
+
+    # 2D 좌표 생성 (임의의 원 형태로 변환)
+    angles = np.linspace(0, 2 * np.pi, len(radii))
+    x_coords = radii * np.cos(angles)
+    y_coords = radii * np.sin(angles)
+
+    # 시각화
+    plt.figure(figsize=(8, 8), facecolor='white')  # 배경색을 흰색으로 설정
+
+    # normal 점들 시각화
+    scatter = plt.scatter(x_coords, y_coords, c='blue', s=50, alpha=0.6, edgecolor='black', linewidth=0.5, label='Normal')
+
+    # 중심 표시
+    plt.scatter(0, 0, c='black', s=150, marker='o', label='Center', linewidth=2)
+
+    # 가장 작은 반지름과 가장 큰 반지름을 기준으로 원 추가
+    circle_min = Circle((0, 0), min_radius, color='green', fill=False, linestyle='--', linewidth=2, label=f'Min Radius ({min_radius:.2f})')
+    circle_max = Circle((0, 0), max_radius, color='red', fill=False, linestyle='--', linewidth=2, label=f'Max Radius ({max_radius:.2f})')
+    circle_common = Circle((0, 0), most_common_radius, color='orange', fill=False, linestyle='--', linewidth=2, label=f'Most Common Radius ({most_common_radius:.2f})')
+
+    plt.gca().add_patch(circle_min)
+    plt.gca().add_patch(circle_max)
+    plt.gca().add_patch(circle_common)
+
+    # 축과 그래프의 스타일 설정
+    plt.title('Latent Space Visualization of Train Dataset', fontsize=16, fontweight='bold', pad=20)
+    plt.xlabel('X Coordinate', fontsize=14)
+    plt.ylabel('Y Coordinate', fontsize=14)
+    
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend(fontsize=12)
+    
+    # 이미지 저장 및 출력
+    plt.savefig(os.path.join(save_dir, '09. latent space train dataset.png'), bbox_inches='tight', dpi=300)  # 해상도를 높여서 저장
+    plt.show()
+
+
+def visualize_latent_space_test(net, center, test_loader, device, save_dir):
+    net.eval()
+    radii = []
+    labels_list = []
+    with torch.no_grad():
+        for x, labels in test_loader:
+            x = x.float().to(device)
+            z = net(x)  # test dataset을 latent space로 변환
+            distances = torch.sum((z - center) ** 2, dim=1)  # 중심과의 거리 계산 (반지름 값)
+            radii.extend(distances.cpu().numpy())  # 반지름 값 저장
+            labels_list.extend(labels.numpy())  # 라벨 저장
+
+    radii = np.array(radii)
+    labels_list = np.array(labels_list)
+
+    # normal과 novel 점 분리
+    normal_mask = (labels_list == 0)
+    novel_mask = (labels_list == 1)
+
+    normal_radii = radii[normal_mask]
+    novel_radii = radii[novel_mask]
+
+    # KDE를 사용하여 밀도가 높은 반지름 값 찾기
+    kde = gaussian_kde(normal_radii)
+    x_range = np.linspace(np.min(normal_radii), np.max(normal_radii), 1000)
+    kde_values = kde(x_range)
+    most_common_radius = x_range[np.argmax(kde_values)]
+
+    # 2D 좌표 생성 (임의의 원 형태로 변환)
+    angles_normal = np.linspace(0, 2 * np.pi, len(normal_radii))
+    x_coords_normal = normal_radii * np.cos(angles_normal)
+    y_coords_normal = normal_radii * np.sin(angles_normal)
+
+    angles_novel = np.linspace(0, 2 * np.pi, len(novel_radii))
+    x_coords_novel = novel_radii * np.cos(angles_novel)
+    y_coords_novel = novel_radii * np.sin(angles_novel)
+
+    # normal의 최소 반지름과 최대 반지름 계산
+    min_radius = np.min(normal_radii)
+    max_radius = np.max(normal_radii)
+
+    # 시각화
+    plt.figure(figsize=(8, 8), facecolor='white')  # 배경색을 흰색으로 설정
+
+    # normal과 novel 점들 시각화
+    scatter_normal = plt.scatter(x_coords_normal, y_coords_normal, c='blue', s=50, alpha=0.6, edgecolor='black', linewidth=0.5, label='Normal')
+    scatter_novel = plt.scatter(x_coords_novel, y_coords_novel, c='red', s=50, alpha=0.6, edgecolor='black', linewidth=0.5, label='Novel')
+
+    # 중심 표시
+    plt.scatter(0, 0, c='black', s=100, marker='o', label='Center', linewidth=2)  # 중심 원은 조금 작게 설정
+
+    # 가장 작은 반지름과 가장 큰 반지름을 기준으로 원 추가
+    circle_min = Circle((0, 0), min_radius, color='green', fill=False, linestyle='--', linewidth=2, label=f'Min Normal Radius ({min_radius:.2f})')
+    circle_max = Circle((0, 0), max_radius, color='red', fill=False, linestyle='--', linewidth=2, label=f'Max Normal Radius ({max_radius:.2f})')
+    circle_common = Circle((0, 0), most_common_radius, color='orange', fill=False, linestyle='--', linewidth=2, label=f'Most Common Radius ({most_common_radius:.2f})')
+
+    plt.gca().add_patch(circle_min)
+    plt.gca().add_patch(circle_max)
+    plt.gca().add_patch(circle_common)
+
+    # 축과 그래프의 스타일 설정
+    plt.title('Latent Space Visualization of Test Dataset', fontsize=16, fontweight='bold', pad=20)
+    plt.xlabel('X Coordinate', fontsize=14)
+    plt.ylabel('Y Coordinate', fontsize=14)
+
+    plt.grid(True, linestyle='--', alpha=0.5)
+    plt.legend(fontsize=12)
+
+    # 이미지 저장 및 출력
+    plt.savefig(os.path.join(save_dir, '10. latent space test dataset.png'), bbox_inches='tight', dpi=300)  # 해상도를 높여서 저장
+    plt.show()
